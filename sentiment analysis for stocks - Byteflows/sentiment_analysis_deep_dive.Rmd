@@ -1,0 +1,514 @@
+--
+title: "How to do develop sentiment analysis to analyse stocks"
+author: "Andi Shehu. Byteflow Dynamics"
+header-includes:
+- \usepackage{fancyhdr}
+- \pagestyle{fancy}
+- \fancyfoot[CO,CE]{Sentiment Analysis I}
+- \fancyfoot[LE,RO]{\thepage}
+date: "12/04/2019"
+output:
+  slidy_presentation:
+    highlight: tango
+    number_sections: yes
+    toc: yes
+    toc_depth: 3
+  word_document:
+    toc: yes
+    toc_depth: '3'
+linkcolor: green
+urlcolor: blue
+---
+
+
+\newpage
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, 
+                      cache = TRUE)
+library(tidyverse)
+library(dbplyr)
+```
+
+
+# Overview 
+
+## Problem statement in brief 
+
+
+In the world of finance traders and analysts are always vying to stay ahead of the curve when picking stocks using any data sets that they can get their hands on. This can be in the form of time series which can be purchased from the likes of a Bloomberg terminal or it can be an earning reports. 
+
+In addition, many of the large institutions deploy an army of analysts to analyze news coverage on particular stocks. In the old fashioned world, this is done by manually going through articles covering a list of stocks and counting positive and negative words for the overall sentiment. A final score is calculated using some internal proprietary algorithm. The score is handed over to the traders who then decide whether to buy, sell, or short a partiular stock. 
+
+There are however a few challenges with this methodology:  
+  *i* it is not a scalable solution, often firms will limit the number of sources and stocks to follow;    
+  *ii* humans make mistakes, they get tired, and auditing an analyst's work adds to the cost of production.    
+
+ 
+## Problem solution in brief 
+
+Text analytics and Natural Language Processing (NLP) allow for automation of existing scoring methodologies, scaling them up, and quickly iterating on newer models. Once the model is up and running, it can be scaled to score thousands of articles at once. Even though these methods have existed for decades, what is new is the tools from cloud computing and open source community such as R and Python programming languages. We now have the necessary tools to scrape news sources from top blogs and sites. 
+
+Here, we present novel approaches to sentiment analysis over one hundred stocks. The data is scraped from ten news sources over the period of a week and the sentiment is calculated for that week.
+
+\newpage
+
+
+# Methodology
+
+**Sentiment analysis**
+
+We are going to walk through three methodologies to perform sentiment analysis using key words. First, we will start with a more fundamental methodology of using single tokens to analyze the sentiment. Second, we will then move into `n-grams` where we take into consideration negation. Third, we will use finance dictionary developed for more accurate representation  of industry specific words.
+
+
+
+
+## The data 
+
+The data is scraped from ten news sources using Python, which is then stored in Amazon Web Services. `R` programming language is used for the data cleaning and analysis. 
+
+**Sample data** 
+
+In order to demonstrate the scoring process we will select a smaller sample of our full data set.
+
+
+```{r}
+# read raw data 
+data <- read.csv("fulltext_small_sample.csv")
+
+# column names 
+names(data)
+dim(data)
+
+```
+
+
+
+Many of the articles scraped do not actually contain a stock and are labeled as NA (the stock name was probably in metadata). We will remove these articles. 
+
+
+
+
+```{r }
+df_nona <- data %>%
+  filter(is.na(company)==FALSE)
+
+# save the data for future use 
+
+#write_csv(df_nona, "articles.csv")
+dim(df_nona)
+
+
+```
+
+We are left with about 400 articles to analyze. 
+
+
+Select and keep text and stock columns only.  
+
+
+```{r}
+df<- df_nona
+#df <- df_nona %>% 
+#  select(company, text)
+
+#head(df)
+```
+
+
+
+## Steps towards sentiment analysis. 
+
+
+1. Make data tidy 
+2. Remove stopwords 
+3. Choose lexicon 
+4. Add weights
+5. Normalize scoring 
+
+
+### Step 1. Make data tidy 
+
+We will follow the definition of tidy data by Hadley Wickham, Chief Scientist of RStudio (RStudio is the R IDE we are using). The definition of tidy data is: 
+
+* Each variable is saved in its own column. 
+* Each observation is saved in its own row.  
+* Each observation has its own cell.  
+
+
+**Unnest_tokens**
+
+
+`unnest_tokens` is a packages which takes a full text and splits it into individual words, or tokens. We will use it to split each article into individual words. 
+
+It works like this: 
+
+```{r}
+library(tidytext)
+
+text <- "this is a single sentence about sentiment analysis"
+writeLines(text)
+
+# add the text into a dataframe 
+
+text_df <- data_frame(text)
+
+# use the unnest_tokens to tokenize the text and turn it into tidy data. 
+text_df %>% 
+    unnest_tokens(word, text)
+
+
+
+```
+
+
+
+We will now apply the same methodology to our entire data set. 
+ 
+
+```{r }
+# first lets add a unique identifier
+df_id <- df %>%
+  mutate(ID = row_number()) %>% 
+  select(ID, company,date, text,Link )
+
+# now each word becomes its own entry
+df_tidy <- df_id %>%
+  unnest_tokens(word, text)
+df_tidy
+```
+
+
+### Stopwords 
+
+We see that there are a many of common words in the list, often refere to as stopwords, which do not have a lot of value, words such as: "or", "and", "the". 
+
+We will remove them using the built in data set for stopwords `stop_words`. 
+
+
+
+```{r}
+data(stop_words)
+tail(stop_words, 20)
+
+# This can be done simply anti joining the two data sets. 
+df_tidy <- df_tidy %>%
+  anti_join(stop_words, by = "word")
+df_tidy
+```
+
+
+### Exploratory data analysis (EDA)
+
+Let`s see which words are most common. 
+
+
+```{r}
+df_tidy %>%
+  count(word, sort=TRUE)
+```
+
+
+How about most common words by company. 
+
+```{r}
+df_tidy %>%
+  group_by(company) %>%
+  count(word, sort = TRUE)
+```
+
+We see that Tesla is very much defined by its chief executive, Elon Musk. 
+
+
+Let's plot the most overall common words. 
+
+```{r}
+library(ggplot2)
+
+# Create a dataframe woth count
+
+df_count <- df_tidy %>%
+  count(word, sort=TRUE) %>% 
+  head(20)
+  
+
+ggplot(data = df_count, aes(x = reorder(word, -n), y = n))+
+  geom_col(fill = "red")+
+  coord_flip()+
+  xlab(NULL)+
+  ylab("word count")
+
+```
+
+
+
+Let's try a wordcoloud just for fun. 
+
+```{r}
+library(wordcloud)
+
+df_tidy %>% 
+  count(word) %>% 
+      with(wordcloud(word,n, max.words = 100,color = "blue"))
+```
+
+
+## Sentiment analysis, one-gram 
+
+The data has been tidying up and is ready for sentiment analysis. There are several built-in packages we can use to get sentiments. Let us try them out.  
+
+
+
+```{r}
+sentiments
+#unique(sentiments$lexicon)
+```
+
+There are four lexicons. We will use `bing` and `loughran` as for now we are interested in positive and negative sentiments. 
+
+
+### Bing lexicon
+
+Let's start with the `bing` sentiment 
+
+```{r}
+bing <- get_sentiments("bing")
+bing
+```
+
+From our original dataset we are going to keep the words in the lexicon. This can be easily achieved using `inner_join()` to combine the two data sets and keep only the words that appear in both the stocks data and the `bing` data. 
+
+
+```{r}
+df_sentiment <- df_tidy %>%
+  inner_join(bing, by = "word")
+df_sentiment
+```
+
+
+Now we can simply `count` all the positive and negative sentiments for an overall sentiment score. We can do this per article and overall press coverage for this particular time period. 
+
+```{r}
+
+df_pos_neg <- df_sentiment %>% 
+  group_by(ID, company) %>% 
+  count(sentiment)
+df_pos_neg
+
+```
+
+
+
+Spread the data so positive and negative are their own column. 
+
+```{r }
+df_spread <- df_pos_neg %>% 
+  spread(sentiment, n)
+df_spread
+```
+
+
+
+Calculate net sentiment for each article by simply taking the difference in the number of positive and negative words devided by their sum for normalization. 
+
+
+```{r }
+df_net_article <- df_spread %>% 
+  mutate(net = (positive-negative)/(positive+negative))
+df_net_article
+```
+
+
+Calculate net sentiment per company over all the articles for that particular time period. 
+
+
+```{r}
+bing_net <-df_net_article %>% 
+  group_by(company) %>% 
+  summarise(net_overall = mean(net, na.rm = TRUE)) %>% 
+  arrange(net_overall)
+
+
+bing_net %>% head(20)
+
+bing_net %>% tail(20)
+```
+
+
+## Loughran: finance lexicon 
+
+Lets try using a different lexicon, something more specific to finance. We want to use this because there are specific words in finance that when taken out of context may give the wrong sentiment. . Words such as tax, cost, capital, board, liability, foreign, and vice appear on many lexicons. In financial statements, vice will often be a title, vice-president. 
+
+
+Loughran et. al. \footnote{When Is a Liability Not a Liability?}. of University of Notre Dame have developed a domain specific lexicon which is a great improvemnt on more traditional dictionaries. 
+
+```{r}
+loughran <- get_sentiments("loughran")
+dim(loughran)
+```
+
+There are over 4000 words in the `loughran` dictionary with tho following sentiments. 
+
+```{r}
+unique(loughran$sentiment)
+```
+
+
+We will focus on the positive and negative sentiments.  
+
+
+Lets inner join with the `loghran` sentiments to keep only the key words. 
+
+```{r}
+
+df_loughran <- df_tidy %>% 
+  inner_join(loughran)
+df_loughran
+```
+
+
+Count the sentiments
+
+```{r}
+
+df_loughran_senti <- df_loughran %>% 
+  group_by(ID, company) %>% 
+  count(sentiment) %>% 
+  spread(sentiment, n) %>% 
+   replace_na(list(positive = 0, positive = "unknown")) %>% 
+  replace_na(list(negative = 0, negative = "unknown")) %>% 
+  ungroup()
+df_loughran_senti
+
+```
+
+
+Lets select only the positive and negative sentiments 
+
+```{r}
+loughran_pos_neg <- df_loughran_senti %>% 
+  select(ID, company, positive, negative)
+loughran_pos_neg
+
+loughran_pos_neg <- loughran_pos_neg %>% 
+  mutate(net = (positive - negative)/(positive+negative))
+
+loughran_pos_neg
+```
+
+Combine it with original data
+
+```{r}
+
+df_final <- loughran_pos_neg %>% 
+  left_join(df_id, by = "ID")
+df_final
+```
+
+
+Calculate the net score
+
+```{r }
+loughran_net <- loughran_pos_neg %>% 
+  group_by(company) %>% 
+  summarise(net_loughran = mean(net, na.rm = TRUE)) %>% 
+  arrange(net_loughran)
+loughran_net
+```
+
+
+# Compare lexicons 
+
+Lets compare the two lexicons 
+
+```{r}
+two_lex <- loughran_net %>% 
+  inner_join(bing_net, by = "company")
+
+print.data.frame(two_lex)
+```
+
+
+
+## Sentiment analysis 2-gram 
+
+So far we have calculated the sentiment by simply adding the positive and negative words for a net number of positive and negative words. However, there are negation words for which we have not accounted for. Consider the following sentence: "Investers are **not** confident in Tesla and Elon Musk is **not** happy with shortsellers" In this sentence the the words "confident" and "happy" would be considered as positive. 
+
+
+### Tokenizing by n-gram  
+
+
+We can use the `unnest_tokens()` for two words instead of one. 
+
+
+
+```{r}
+
+df_bigrams <- df_id %>% 
+  unnest_tokens(bigrams, text, token = "ngrams", n = 2)
+df_bigrams
+
+```
+
+Now lets separate them into own columns 
+
+```{r}
+
+bigrams_separated <- df_bigrams %>% 
+  separate(bigrams, c("word1", "word2"), sep = " ")
+
+```
+
+
+Lets check the negated words
+
+```{r}
+
+# create a list of negation words
+
+negation_words <- c("no", "can't", "not", "never", "won't")
+
+negated_words <- bigrams_separated %>% 
+  filter(word1 %in% negation_words) %>% 
+  inner_join(loughran, by = c(word2 = "word")) 
+  
+  
+```
+
+
+Correcting for negation 
+
+```{r}
+negated_words <- bigrams_separated %>% 
+  filter(word1 %in% negation_words) %>% 
+  inner_join(loughran, by = c(word2 = "word")) 
+
+# count the number of positive and negative words which need to be reversed 
+
+negated_counted <- negated_words %>% 
+  group_by(ID, company) %>% 
+  count(sentiment)%>%
+  ungroup() %>% 
+  filter(sentiment %in% c("positive", "negative")) %>% 
+  spread(sentiment, n) %>% 
+  replace_na(list(positive = 0, positive = "unknown")) %>% 
+  replace_na(list(negative = 0, negative = "unknown"))
+
+# create a net score 
+
+negated_net <- negated_counted %>% 
+  mutate(net2 = negative - positive) %>% 
+  select(-c(negative, positive))
+
+# now to correct the original score we need to add net2 to positive column 
+# subtract net2 from negative column 
+
+# this was the original score
+loughran_pos_neg 
+
+# join the two data sets 
+
+loughran_pos_neg2 <- loughran_pos_neg %>% 
+  left_join(negated_net, by = c("ID", "company")) %>% 
+  replace_na(list(net2 = 0,

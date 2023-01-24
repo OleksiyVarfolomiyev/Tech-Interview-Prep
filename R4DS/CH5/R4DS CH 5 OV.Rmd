@@ -1,0 +1,114 @@
+---
+title: "R4DS CH5"
+author: "Alex (Oleksiy) Varfolomiyev"
+date: "12/8/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 5.2.4 Exercises
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <https://r4ds.had.co.nz/transform.html>.
+
+
+```{r }
+require(nycflights13)
+require(tidyverse)
+flights<-nycflights13::flights
+
+#Find all flights that
+
+#Had an arrival delay of two or more hours
+(filter(flights, arr_delay > 120))
+
+# Flew to Houston (IAH or HOU)
+filter(flights, dest == 'HOU' | dest == 'IAH')
+
+# Were operated by United, American, or Delta
+filter(flights, carrier == 'UA' | carrier == 'AA'  | carrier == 'DL')
+
+# Departed in summer (July, August, and September)
+filter(flights, month == 7 | month == 8 | month== 9)
+
+# Arrived more than two hours late, but didn’t leave late
+filter(flights, arr_delay > 120 & dep_delay <= 0)
+
+# Were delayed by at least an hour, but made up over 30 minutes in flight
+filter(flights, arr_delay <= dep_delay - 30 & dep_delay >= 60)
+
+# Departed between midnight and 6am (inclusive)
+filter(flights, dep_time <=360 & dep_time == 2400)
+
+flights %>% 
+  filter(dep_delay <= 360 & dep_delay == 2400)
+
+```
+
+
+
+```{r, echo=FALSE}
+# Another useful dplyr filtering helper is between(). What does it do? Can you use it to simplify the code needed to answer the previous challenges?
+#Had an arrival delay of two or more hours
+(filter(flights, arr_delay > 120))
+
+# Flew to Houston (IAH or HOU)
+filter(flights, dest == 'HOU' | dest == 'IAH')
+
+# Were operated by United, American, or Delta
+filter(flights, carrier == 'UA' | carrier == 'AA'  | carrier == 'DL')
+
+# Departed in summer (July, August, and September)
+
+filter(flights, between(month, 7,9))
+
+# Arrived more than two hours late, but didn’t leave late
+filter(flights, arr_delay > 120 & dep_delay <= 0)
+
+# Were delayed by at least an hour, but made up over 30 minutes in flight
+filter(flights, arr_delay <= dep_delay - 30 & dep_delay >= 60)
+
+# Departed between midnight and 6am (inclusive)
+filter(flights, between(dep_time, 0, 600))
+```
+
+```{r, echo=FALSE}
+
+# How many flights have a missing dep_time? 
+nrow( filter(flights, is.na(dep_time)) )
+# What other variables are missing? 
+summary(flights)
+
+#What might these rows represent?
+# Cancelled flights.
+
+```
+
+```{r, echo=FALSE}
+
+# 3.10
+if(!require(ISLR)){
+    install.packages("ISLR")
+    library(ISLR)
+}
+library(ISLR)
+attach(Carseats)
+lm_a=lm(Sales~Price+Urban+US)
+summary(lm_a)
+# Dropping Urban
+lm_e=lm(Sales~Price+US)
+summary(lm_e)
+# How much more US stores sell on avg (%)
+(mean(Carseats$Sales[Carseats$US=='Yes'])- mean(Carseats$Sales[Carseats$US=='No']))/mean(Carseats$Sales[Carseats$US=='Yes'])*100
+library(dplyr)
+Carseats  %>% filter(US == 'Yes') %>% summarise(ave = mean(Sales))
+confint(lm_e)
+# residuals outliers
+plot(predict(lm_e), rstudent(lm_e))
+
+par(mfrow=c(2,2))
+plot(lm_e)
+
+```
